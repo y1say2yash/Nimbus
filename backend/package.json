@@ -7,15 +7,20 @@
     "dev": "nodemon --legacy-watch --exec tsx src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "db:migrate": "knex --knexfile knexfile.ts migrate:latest",
+    "db:rollback": "knex --knexfile knexfile.ts migrate:rollback",
+    "db:status": "knex --knexfile knexfile.ts migrate:list"
   },
   "dependencies": {
     "express": "^5.2.1",
+    "knex": "^3.3.0",
     "pg": "^8.23.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/express": "^5.0.6",
+    "@types/knex": "^0.15.2",
     "@types/node": "^26.6.3",
     "@types/pg": "^8.23.1",
     "eslint": "^10.11.0",

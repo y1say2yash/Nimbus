@@ -1,5 +1,5 @@
 import express from 'express';
-import databasePool from './config/database.js';
+import database from './config/knex.js';
 
 const app = express();
 
@@ -7,7 +7,7 @@ app.use(express.json());
 
 app.get('/api/v1/health', async (_req, res) => {
     try {
-        await databasePool.query('SELECT 1');
+        await database.raw('SELECT 1');
 
         res.json({
             data: {
