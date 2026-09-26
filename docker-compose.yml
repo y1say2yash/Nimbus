@@ -10,6 +10,8 @@ services:
       - frontend
       - backend
     restart: unless-stopped
+    networks:
+      - nimbus_internal_network
 
   frontend:
     build:
@@ -24,6 +26,8 @@ services:
     expose:
       - "5173"
     restart: unless-stopped
+    networks:
+      - nimbus_internal_network
 
   backend:
     build:
@@ -60,6 +64,8 @@ services:
       postgres:
         condition: service_healthy
     restart: unless-stopped
+    networks:
+      - nimbus_internal_network
 
   postgres:
     image: postgres:18-alpine
@@ -83,9 +89,15 @@ services:
       retries: 10
       start_period: 10s
     restart: unless-stopped
+    networks:
+      - nimbus_internal_network
 
 volumes:
   postgres_data:
   frontend_node_modules:
   backend_node_modules:
   nimbus_logs:
+
+networks:
+  nimbus_internal_network:
+    driver: bridge
