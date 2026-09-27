@@ -1,16 +1,21 @@
 import database from '../config/knex.js';
 
 import type { GitHubUser } from './auth-github.js';
+import { encryptGitHubToken } from './auth-token-crypto.js';
 
 interface UpsertUserInput {
     githubUser: GitHubUser;
     email: string;
+    githubAccessToken: string;
 }
 
 export async function upsertUser({
     githubUser,
     email,
+    githubAccessToken,
 }: UpsertUserInput) {
+    const encryptedToken = encryptGitHubToken(githubAccessToken);
+
     const existingUser = await database('users')
         .where('github_id', githubUser.id)
         .first();
@@ -22,6 +27,7 @@ export async function upsertUser({
                 github_username: githubUser.login,
                 email,
                 avatar_url: githubUser.avatar_url,
+                github_access_token_encrypted: encryptedToken,
                 is_active: true,
                 updated_at: database.fn.now(),
                 deleted_at: null,
@@ -44,6 +50,7 @@ export async function upsertUser({
             github_username: githubUser.login,
             email,
             avatar_url: githubUser.avatar_url,
+            github_access_token_encrypted: encryptedToken,
             is_active: true,
         })
         .returning([

@@ -5,6 +5,7 @@ import database from './config/knex.js';
 import authRoutes from './auth/auth-routes.js';
 // import { } from './auth/auth-middleware.js';
 import userRoutes from './users/user-routes.js';
+import projectRoutes from './projects/project-routes.js';
 
 const app = express();
 
@@ -12,8 +13,8 @@ app.use(express.json());
 app.use(cookieParser());
 
 app.use('/api/v1/auth', authRoutes);
-
 app.use('/api/v1/users', userRoutes);
+app.use('/api/v1/projects', projectRoutes);
 
 app.get('/api/v1/health', async (_req, res) => {
     try {

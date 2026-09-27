@@ -13,6 +13,8 @@ export async function up(knex: Knex): Promise<void> {
 
         table.string('email', 255).notNullable().unique();
 
+        table.text('github_access_token_encrypted').nullable();
+
         table.text('avatar_url');
 
         table.boolean('is_active').notNullable().defaultTo(true);

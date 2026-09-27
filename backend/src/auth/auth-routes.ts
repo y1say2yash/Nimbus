@@ -95,6 +95,7 @@ router.get('/github/callback', async (req, res) => {
         const user = await upsertUser({
             githubUser,
             email,
+            githubAccessToken: accessToken,
         });
 
         const sessionToken = await createSession(user.user_id);
