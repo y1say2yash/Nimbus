@@ -6,6 +6,17 @@ import { getGitHubAccessToken } from '../auth/auth-github-token.js';
 
 const execFileAsync = promisify(execFile);
 
+export interface GitCommandResult {
+    stdout: string;
+    stderr: string;
+}
+
+export interface CloneRepositoryResult {
+    commitSha: string;
+    stdout: string;
+    stderr: string;
+}
+
 export class GitError extends Error {
     public readonly stderr: string;
     public readonly exitCode: number | null;
@@ -28,7 +39,7 @@ async function runGit(
         cwd?: string;
         env?: NodeJS.ProcessEnv;
     } = {},
-) {
+): Promise<GitCommandResult> {
     try {
         return await execFileAsync('git', args, {
             cwd: options.cwd,
@@ -71,16 +82,18 @@ export async function cloneRepository(
     repositoryUrl: string,
     branch: string,
     workspacePath: string,
-): Promise<string> {
-    const accessToken = await getGitHubAccessToken(userId);
+): Promise<CloneRepositoryResult> {
+    const accessToken =
+        await getGitHubAccessToken(userId);
 
     await fs.mkdir(workspacePath, {
         recursive: true,
     });
 
-    const environment = createGitEnvironment(accessToken);
+    const environment =
+        createGitEnvironment(accessToken);
 
-    await runGit(
+    const cloneResult = await runGit(
         [
             'clone',
             '--branch',
@@ -104,7 +117,11 @@ export async function cloneRepository(
         },
     );
 
-    return result.stdout.trim();
+    return {
+        commitSha: result.stdout.trim(),
+        stdout: cloneResult.stdout,
+        stderr: cloneResult.stderr,
+    };
 }
 
 export async function cloneCommit(
@@ -113,13 +130,15 @@ export async function cloneCommit(
     commitSha: string,
     workspacePath: string,
 ): Promise<void> {
-    const accessToken = await getGitHubAccessToken(userId);
+    const accessToken =
+        await getGitHubAccessToken(userId);
 
     await fs.mkdir(workspacePath, {
         recursive: true,
     });
 
-    const environment = createGitEnvironment(accessToken);
+    const environment =
+        createGitEnvironment(accessToken);
 
     await runGit(
         [

@@ -15,6 +15,7 @@ import {
     DeploymentNotFoundError,
     DeploymentProjectNotFoundError,
     getDeployment,
+    getDeploymentLogs,
     listDeployments,
 } from './deployment-service.js';
 
@@ -127,6 +128,29 @@ router.post(
 
             res.status(202).json({
                 data: deployment,
+            });
+        } catch (error) {
+            handleDeploymentError(
+                error,
+                res,
+            );
+        }
+    },
+);
+
+router.get(
+    '/projects/:projectId/deployments/:deploymentId/logs',
+    async (req, res) => {
+        try {
+            const logs =
+                await getDeploymentLogs(
+                    getUserId(req),
+                    req.params.projectId,
+                    req.params.deploymentId,
+                );
+
+            res.json({
+                data: logs,
             });
         } catch (error) {
             handleDeploymentError(

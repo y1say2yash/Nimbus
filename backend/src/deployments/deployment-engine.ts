@@ -12,6 +12,7 @@ import {
 import {
     cloneRepository,
     GitError,
+    type CloneRepositoryResult,
 } from '../git/git-service.js';
 import {
     removeRuntime,
@@ -31,6 +32,7 @@ export interface DeploymentInput {
 export interface DeploymentWorkspace {
     path: string;
     commitSha: string;
+    gitOutput: CloneRepositoryResult;
 }
 
 export async function prepareDeployment(
@@ -44,7 +46,7 @@ export async function prepareDeployment(
     );
 
     try {
-        const commitSha = await cloneRepository(
+        const gitResult = await cloneRepository(
             input.userId,
             input.repositoryUrl,
             input.branch,
@@ -53,7 +55,8 @@ export async function prepareDeployment(
 
         return {
             path: workspacePath,
-            commitSha,
+            commitSha: gitResult.commitSha,
+            gitOutput: gitResult,
         };
     } catch (error) {
         await fs.rm(workspacePath, {
@@ -68,9 +71,12 @@ export async function prepareDeployment(
 export async function buildDeployment(
     imageTag: string,
     workspacePath: string,
-): Promise<void> {
+): Promise<{
+    stdout: string;
+    stderr: string;
+}> {
     try {
-        await buildImage(
+        return await buildImage(
             imageTag,
             workspacePath,
         );
@@ -90,9 +96,12 @@ export async function startDeployment(
         hostPort: number;
         containerPort: number;
     },
-): Promise<void> {
+): Promise<{
+    stdout: string;
+    stderr: string;
+}> {
     try {
-        await startRuntime(input);
+        return await startRuntime(input);
     } catch (error) {
         throw wrapDeploymentError(error);
     }

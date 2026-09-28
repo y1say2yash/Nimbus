@@ -17,8 +17,8 @@ export interface StartRuntimeInput {
 
 export async function startRuntime(
     input: StartRuntimeInput,
-): Promise<void> {
-    await runContainer({
+) {
+    return runContainer({
         ...input,
         network: NIMBUS_NETWORK,
     });

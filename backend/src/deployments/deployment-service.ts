@@ -9,6 +9,11 @@ import {
 } from '../runtime/runtime-routing.js';
 
 import {
+    readDeploymentLogs,
+    writeDeploymentLog,
+} from '../logs/log-service.js';
+
+import {
     allocateDeploymentPort,
     buildDeployment,
     cleanupDeploymentWorkspace,
@@ -241,13 +246,22 @@ async function executeDeployment(input: {
     containerName: string;
 }): Promise<void> {
     let workspacePath: string | null = null;
-    let hostPort: number | null = null;
     let containerStarted = false;
 
     try {
+        await writeDeploymentLog(
+            input.deploymentId,
+            `Deployment started for project "${input.projectName}".`,
+        );
+
         await updateDeploymentStatus(
             input.deploymentId,
             'CLONING',
+        );
+
+        await writeDeploymentLog(
+            input.deploymentId,
+            `Cloning branch "${input.branch}" from ${input.repositoryUrl}.`,
         );
 
         const workspace =
@@ -262,6 +276,25 @@ async function executeDeployment(input: {
 
         workspacePath = workspace.path;
 
+        if (workspace.gitOutput.stdout.trim()) {
+            await writeDeploymentLog(
+                input.deploymentId,
+                `Git stdout:\n${workspace.gitOutput.stdout.trim()}`,
+            );
+        }
+
+        if (workspace.gitOutput.stderr.trim()) {
+            await writeDeploymentLog(
+                input.deploymentId,
+                `Git stderr:\n${workspace.gitOutput.stderr.trim()}`,
+            );
+        }
+
+        await writeDeploymentLog(
+            input.deploymentId,
+            `Repository cloned successfully. Commit: ${workspace.commitSha}.`,
+        );
+
         await updateDeployment(
             input.deploymentId,
             {
@@ -270,13 +303,43 @@ async function executeDeployment(input: {
             },
         );
 
-        await buildDeployment(
-            input.imageTag,
-            workspace.path,
+        await writeDeploymentLog(
+            input.deploymentId,
+            `Building Docker image "${input.imageTag}".`,
         );
 
-        hostPort =
+        const buildResult =
+            await buildDeployment(
+                input.imageTag,
+                workspace.path,
+            );
+
+        if (buildResult.stdout.trim()) {
+            await writeDeploymentLog(
+                input.deploymentId,
+                `Docker build stdout:\n${buildResult.stdout.trim()}`,
+            );
+        }
+
+        if (buildResult.stderr.trim()) {
+            await writeDeploymentLog(
+                input.deploymentId,
+                `Docker build stderr:\n${buildResult.stderr.trim()}`,
+            );
+        }
+
+        await writeDeploymentLog(
+            input.deploymentId,
+            `Docker image "${input.imageTag}" built successfully.`,
+        );
+
+        const hostPort =
             await allocateDeploymentPort();
+
+        await writeDeploymentLog(
+            input.deploymentId,
+            `Allocated host port ${hostPort}.`,
+        );
 
         await updateDeployment(
             input.deploymentId,
@@ -286,18 +349,53 @@ async function executeDeployment(input: {
             },
         );
 
-        await startDeployment({
-            containerName: input.containerName,
-            imageTag: input.imageTag,
-            hostPort,
-            containerPort: input.containerPort,
-        });
+        await writeDeploymentLog(
+            input.deploymentId,
+            `Starting container "${input.containerName}".`,
+        );
+
+        const startResult =
+            await startDeployment({
+                containerName: input.containerName,
+                imageTag: input.imageTag,
+                hostPort,
+                containerPort: input.containerPort,
+            });
+
+        if (startResult.stdout.trim()) {
+            await writeDeploymentLog(
+                input.deploymentId,
+                `Docker run stdout:\n${startResult.stdout.trim()}`,
+            );
+        }
+
+        if (startResult.stderr.trim()) {
+            await writeDeploymentLog(
+                input.deploymentId,
+                `Docker run stderr:\n${startResult.stderr.trim()}`,
+            );
+        }
 
         containerStarted = true;
+
+        await writeDeploymentLog(
+            input.deploymentId,
+            `Container "${input.containerName}" started successfully.`,
+        );
+
+        await writeDeploymentLog(
+            input.deploymentId,
+            `Waiting for application health check on /health.`,
+        );
 
         await verifyDeployment(
             input.containerName,
             input.containerPort,
+        );
+
+        await writeDeploymentLog(
+            input.deploymentId,
+            'Application health check passed.',
         );
 
         /*
@@ -312,8 +410,14 @@ async function executeDeployment(input: {
             containerPort: input.containerPort,
         });
 
+        await writeDeploymentLog(
+            input.deploymentId,
+            `Application route activated at /apps/${input.projectName}/.`,
+        );
+
         await stopPreviousDeployment(
             input.projectId,
+            input.deploymentId,
             input.deploymentId,
         );
 
@@ -325,10 +429,23 @@ async function executeDeployment(input: {
                 finished_at: database.fn.now(),
             },
         );
+
+        await writeDeploymentLog(
+            input.deploymentId,
+            'Deployment completed successfully.',
+        );
     } catch (error) {
         console.error(
             `Deployment ${input.deploymentId} failed:`,
             error,
+        );
+
+        await writeDeploymentLog(
+            input.deploymentId,
+            `Deployment failed: ${error instanceof Error
+                ? error.message
+                : 'Unknown deployment error.'
+            }`,
         );
 
         /*
@@ -340,6 +457,11 @@ async function executeDeployment(input: {
         if (containerStarted) {
             await cleanupFailedRuntime(
                 input.containerName,
+            );
+
+            await writeDeploymentLog(
+                input.deploymentId,
+                `Cleaned up failed container "${input.containerName}".`,
             );
         }
 
@@ -358,6 +480,11 @@ async function executeDeployment(input: {
         if (workspacePath) {
             await cleanupDeploymentWorkspace(
                 workspacePath,
+            );
+
+            await writeDeploymentLog(
+                input.deploymentId,
+                'Temporary deployment workspace cleaned up.',
             );
         }
 
@@ -390,6 +517,7 @@ async function updateDeployment(
 async function stopPreviousDeployment(
     projectId: string,
     currentDeploymentId: string,
+    logDeploymentId: string,
 ): Promise<void> {
     const previousDeployment = await database(
         'deployments',
@@ -411,6 +539,11 @@ async function stopPreviousDeployment(
     }
 
     try {
+        await writeDeploymentLog(
+            logDeploymentId,
+            `Stopping previous deployment ${previousDeployment.deployment_id}.`,
+        );
+
         await stopRuntime(
             previousDeployment.container_name,
         );
@@ -424,10 +557,42 @@ async function stopPreviousDeployment(
                 status: 'STOPPED',
                 finished_at: database.fn.now(),
             });
+
+        await writeDeploymentLog(
+            logDeploymentId,
+            `Previous deployment ${previousDeployment.deployment_id} stopped.`,
+        );
     } catch (error) {
         console.error(
             `Failed to stop previous deployment ${previousDeployment.deployment_id}:`,
             error,
         );
+
+        await writeDeploymentLog(
+            logDeploymentId,
+            `Warning: failed to stop previous deployment ${previousDeployment.deployment_id}.`,
+        );
     }
+}
+
+export async function getDeploymentLogs(
+    userId: string,
+    projectId: string,
+    deploymentId: string,
+) {
+    await getDeployment(
+        userId,
+        projectId,
+        deploymentId,
+    );
+
+    const logs =
+        await readDeploymentLogs(
+            deploymentId,
+        );
+
+    return {
+        deployment_id: deploymentId,
+        logs,
+    };
 }
