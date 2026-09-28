@@ -1,24 +1,60 @@
-import net from 'node:net';
+import {
+    execFile,
+} from 'node:child_process';
+import {
+    promisify,
+} from 'node:util';
+
+const execFileAsync = promisify(execFile);
 
 const DEFAULT_START_PORT = 10000;
 const DEFAULT_END_PORT = 20000;
 
-function isPortAvailable(port: number): Promise<boolean> {
-    return new Promise((resolve) => {
-        const server = net.createServer();
+async function getDockerPublishedPorts(): Promise<Set<number>> {
+    try {
+        const {
+            stdout,
+        } = await execFileAsync(
+            'docker',
+            [
+                'ps',
+                '--format',
+                '{{.Ports}}',
+            ],
+            {
+                maxBuffer: 10 * 1024 * 1024,
+            },
+        );
 
-        server.once('error', () => {
-            resolve(false);
-        });
+        const ports = new Set<number>();
 
-        server.once('listening', () => {
-            server.close(() => {
-                resolve(true);
-            });
-        });
+        for (const line of stdout.split('\n')) {
+            const matches = line.matchAll(
+                /(?:0\.0\.0\.0|:::):(\d+)->/g,
+            );
 
-        server.listen(port, '0.0.0.0');
-    });
+            for (const match of matches) {
+                const port = Number(match[1]);
+
+                if (Number.isInteger(port)) {
+                    ports.add(port);
+                }
+            }
+        }
+
+        return ports;
+    } catch (error) {
+        throw new Error(
+            `Failed to inspect Docker published ports: ${
+                error instanceof Error
+                    ? error.message
+                    : 'Unknown error.'
+            }`,
+            {
+                cause: error,
+            },
+        );
+    }
 }
 
 export async function findAvailableHostPort(
@@ -35,8 +71,15 @@ export async function findAvailableHostPort(
         throw new Error('Invalid host port range.');
     }
 
-    for (let port = startPort; port <= endPort; port += 1) {
-        if (await isPortAvailable(port)) {
+    const publishedPorts =
+        await getDockerPublishedPorts();
+
+    for (
+        let port = startPort;
+        port <= endPort;
+        port += 1
+    ) {
+        if (!publishedPorts.has(port)) {
             return port;
         }
     }
