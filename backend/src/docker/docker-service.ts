@@ -81,16 +81,29 @@ export async function runContainer(options: {
     imageTag: string;
     hostPort: number;
     containerPort: number;
+    network?: string;
 }): Promise<DockerCommandResult> {
-    return runDocker([
+    const args = [
         'run',
         '--detach',
         '--name',
         options.containerName,
+    ];
+
+    if (options.network) {
+        args.push(
+            '--network',
+            options.network,
+        );
+    }
+
+    args.push(
         '--publish',
         `${options.hostPort}:${options.containerPort}`,
         options.imageTag,
-    ]);
+    );
+
+    return runDocker(args);
 }
 
 export async function stopContainer(

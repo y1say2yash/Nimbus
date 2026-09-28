@@ -31,11 +31,11 @@ export async function up(knex: Knex): Promise<void> {
 
         table.string('branch', 255).notNullable();
 
-        table.string('commit_sha', 40).notNullable();
+        table.string('commit_sha', 40).nullable();
 
         table
             .integer('container_port')
-            .notNullable()
+            .nullable()
             .checkBetween([1, 65535]);
 
         table
