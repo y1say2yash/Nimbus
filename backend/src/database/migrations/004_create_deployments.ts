@@ -35,12 +35,12 @@ export async function up(knex: Knex): Promise<void> {
 
         table
             .integer('container_port')
-            .nullable()
+            .notNullable()
             .checkBetween([1, 65535]);
 
         table
             .integer('host_port')
-            .notNullable()
+            .nullable()
             .checkBetween([1, 65535]);
 
         table.string('image_tag', 255).notNullable();

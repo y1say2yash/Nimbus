@@ -38,11 +38,16 @@ export interface DeploymentWorkspace {
 export async function prepareDeployment(
     input: DeploymentInput,
 ): Promise<DeploymentWorkspace> {
-    const workspacePath = await fs.mkdtemp(
+    const workspaceParent = await fs.mkdtemp(
         path.join(
             os.tmpdir(),
             'nimbus-deployment-',
         ),
+    );
+
+    const workspacePath = path.join(
+        workspaceParent,
+        'repo',
     );
 
     try {
@@ -52,7 +57,7 @@ export async function prepareDeployment(
             input.branch,
             workspacePath,
         );
-
+        
         return {
             path: workspacePath,
             commitSha: gitResult.commitSha,

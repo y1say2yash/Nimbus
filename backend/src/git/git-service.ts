@@ -102,9 +102,10 @@ export async function cloneRepository(
             '--depth',
             '1',
             repositoryUrl,
-            workspacePath,
+            '.',
         ],
         {
+            cwd: workspacePath,
             env: environment,
         },
     );
@@ -144,9 +145,10 @@ export async function cloneCommit(
         [
             'clone',
             repositoryUrl,
-            workspacePath,
+            '.',
         ],
         {
+            cwd: workspacePath,
             env: environment,
         },
     );

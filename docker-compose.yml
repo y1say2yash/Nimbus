@@ -6,6 +6,7 @@ services:
       - "80:80"
     volumes:
       - ./infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - nimbus_nginx_generated:/etc/nginx/generated
     depends_on:
       - frontend
       - backend
