@@ -5,6 +5,7 @@ import {
 } from '../runtime/runtime-service.js';
 
 import {
+    removeDeploymentRoute,
     writeDeploymentRoute,
 } from '../runtime/runtime-routing.js';
 
@@ -47,6 +48,13 @@ export class DeploymentConflictError extends Error {
             'Another deployment is already in progress for this project.',
         );
         this.name = 'DeploymentConflictError';
+    }
+}
+
+export class DeploymentStateError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'DeploymentStateError';
     }
 }
 
@@ -148,6 +156,94 @@ export async function getDeployment(
     }
 
     return deployment;
+}
+
+export async function stopDeployment(
+    userId: string,
+    projectId: string,
+    deploymentId: string,
+) {
+    const deployment = await getDeployment(
+        userId,
+        projectId,
+        deploymentId,
+    );
+
+    if (deployment.status !== 'RUNNING') {
+        throw new DeploymentStateError(
+            `Deployment cannot be stopped because its current status is ${deployment.status}.`,
+        );
+    }
+
+    const project = await database('projects')
+        .select('project_name')
+        .where('project_id', projectId)
+        .where('user_id', userId)
+        .where('is_active', true)
+        .first();
+
+    if (!project) {
+        throw new DeploymentProjectNotFoundError();
+    }
+
+    await writeDeploymentLog(
+        deploymentId,
+        'Stop requested by user.',
+    );
+
+    try {
+        await writeDeploymentLog(
+            deploymentId,
+            `Stopping container "${deployment.container_name}".`,
+        );
+
+        await stopRuntime(
+            deployment.container_name,
+        );
+
+        await writeDeploymentLog(
+            deploymentId,
+            `Container "${deployment.container_name}" stopped.`,
+        );
+
+        await removeDeploymentRoute(
+            project.project_name,
+        );
+
+        await writeDeploymentLog(
+            deploymentId,
+            `Application route /apps/${project.project_name}/ removed.`,
+        );
+
+        await updateDeployment(
+            deploymentId,
+            {
+                status: 'STOPPED',
+                finished_at: database.fn.now(),
+            },
+        );
+
+        await writeDeploymentLog(
+            deploymentId,
+            'Deployment stopped successfully.',
+        );
+    } catch (error) {
+        await writeDeploymentLog(
+            deploymentId,
+            `Failed to stop deployment: ${error instanceof Error
+                ? error.message
+                : 'Unknown error.'
+            }`,
+        );
+
+        throw error;
+    }
+
+    return getDeployment(
+        userId,
+        projectId,
+        deploymentId,
+    );
 }
 
 export async function createDeployment(

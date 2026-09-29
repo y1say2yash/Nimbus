@@ -14,9 +14,11 @@ import {
     DeploymentConflictError,
     DeploymentNotFoundError,
     DeploymentProjectNotFoundError,
+    DeploymentStateError,
     getDeployment,
     getDeploymentLogs,
     listDeployments,
+    stopDeployment,
 } from './deployment-service.js';
 
 const router = Router();
@@ -73,6 +75,20 @@ function handleDeploymentError(
         return;
     }
 
+    if (
+        error instanceof DeploymentStateError
+    ) {
+        res.status(409).json({
+            error: {
+                code: 'INVALID_DEPLOYMENT_STATE',
+                message: error.message,
+            },
+        });
+
+        return;
+    }
+
+
     console.error(
         'Deployment request failed:',
         error,
@@ -127,6 +143,29 @@ router.post(
                 );
 
             res.status(202).json({
+                data: deployment,
+            });
+        } catch (error) {
+            handleDeploymentError(
+                error,
+                res,
+            );
+        }
+    },
+);
+
+router.post(
+    '/projects/:projectId/deployments/:deploymentId/stop',
+    async (req, res) => {
+        try {
+            const deployment =
+                await stopDeployment(
+                    getUserId(req),
+                    req.params.projectId,
+                    req.params.deploymentId,
+                );
+
+            res.json({
                 data: deployment,
             });
         } catch (error) {
