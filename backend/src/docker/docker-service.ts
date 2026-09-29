@@ -28,13 +28,19 @@ async function runDocker(
     args: string[],
     options: {
         cwd?: string;
+        signal?: AbortSignal;
     } = {},
 ): Promise<DockerCommandResult> {
     try {
-        const result = await execFileAsync('docker', args, {
-            cwd: options.cwd,
-            maxBuffer: 10 * 1024 * 1024,
-        });
+        const result = await execFileAsync(
+            'docker',
+            args,
+            {
+                cwd: options.cwd,
+                signal: options.signal,
+                maxBuffer: 10 * 1024 * 1024,
+            },
+        );
 
         return {
             stdout: result.stdout,
@@ -45,6 +51,7 @@ async function runDocker(
             message?: string;
             stderr?: string;
             code?: number | string;
+            name?: string;
         };
 
         const exitCode =
@@ -61,19 +68,29 @@ async function runDocker(
 }
 
 export async function checkDockerAvailable(): Promise<void> {
-    await runDocker(['version', '--format', '{{.Server.Version}}']);
+    await runDocker([
+        'version',
+        '--format',
+        '{{.Server.Version}}',
+    ]);
 }
 
 export async function buildImage(
     imageTag: string,
     buildContext: string,
+    signal?: AbortSignal,
 ): Promise<DockerCommandResult> {
-    return runDocker([
-        'build',
-        '--tag',
-        imageTag,
-        buildContext,
-    ]);
+    return runDocker(
+        [
+            'build',
+            '--tag',
+            imageTag,
+            buildContext,
+        ],
+        {
+            signal,
+        },
+    );
 }
 
 export async function runContainer(options: {

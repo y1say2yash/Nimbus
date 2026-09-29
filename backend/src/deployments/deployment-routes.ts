@@ -10,6 +10,7 @@ import {
 } from '../auth/auth-middleware.js';
 
 import {
+    cancelDeployment,
     createDeployment,
     DeploymentConflictError,
     DeploymentNotFoundError,
@@ -160,6 +161,29 @@ router.post(
         try {
             const deployment =
                 await stopDeployment(
+                    getUserId(req),
+                    req.params.projectId,
+                    req.params.deploymentId,
+                );
+
+            res.json({
+                data: deployment,
+            });
+        } catch (error) {
+            handleDeploymentError(
+                error,
+                res,
+            );
+        }
+    },
+);
+
+router.post(
+    '/projects/:projectId/deployments/:deploymentId/cancel',
+    async (req, res) => {
+        try {
+            const deployment =
+                await cancelDeployment(
                     getUserId(req),
                     req.params.projectId,
                     req.params.deploymentId,

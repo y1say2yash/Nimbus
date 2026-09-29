@@ -58,6 +58,13 @@ export class DeploymentStateError extends Error {
     }
 }
 
+export class DeploymentCancelledError extends Error {
+    constructor() {
+        super('Deployment was cancelled.');
+        this.name = 'DeploymentCancelledError';
+    }
+}
+
 type DeploymentStatus =
     | 'PENDING'
     | 'CLONING'
@@ -69,6 +76,17 @@ type DeploymentStatus =
     | 'CANCELLED';
 
 const activeDeploymentProjects = new Set<string>();
+const cancelledDeployments = new Set<string>();
+const deploymentControllers =
+    new Map<string, AbortController>();
+
+function throwIfDeploymentCancelled(
+    deploymentId: string,
+): void {
+    if (cancelledDeployments.has(deploymentId)) {
+        throw new DeploymentCancelledError();
+    }
+}
 
 export async function listDeployments(
     userId: string,
@@ -246,6 +264,68 @@ export async function stopDeployment(
     );
 }
 
+export async function cancelDeployment(
+    userId: string,
+    projectId: string,
+    deploymentId: string,
+) {
+    const deployment = await getDeployment(
+        userId,
+        projectId,
+        deploymentId,
+    );
+
+    const cancellableStatuses: DeploymentStatus[] = [
+        'PENDING',
+        'CLONING',
+        'BUILDING',
+        'STARTING',
+    ];
+
+    if (
+        !cancellableStatuses.includes(
+            deployment.status as DeploymentStatus,
+        )
+    ) {
+        throw new DeploymentStateError(
+            `Deployment cannot be cancelled because its current status is ${deployment.status}.`,
+        );
+    }
+
+    /*
+     * Mark the deployment as cancelled before aborting the
+     * active operation. This ensures the execution path can
+     * recognize the cancellation even if the underlying
+     * Docker/Git operation throws an AbortError.
+     */
+    cancelledDeployments.add(
+        deploymentId,
+    );
+
+    await writeDeploymentLog(
+        deploymentId,
+        'Cancellation requested by user.',
+    );
+
+    /*
+     * Abort the currently running Git/Docker operation.
+     */
+    const controller =
+        deploymentControllers.get(
+            deploymentId,
+        );
+
+    if (controller) {
+        controller.abort();
+    }
+
+    return getDeployment(
+        userId,
+        projectId,
+        deploymentId,
+    );
+}
+
 export async function createDeployment(
     userId: string,
     projectId: string,
@@ -341,6 +421,14 @@ async function executeDeployment(input: {
     imageTag: string;
     containerName: string;
 }): Promise<void> {
+    const controller =
+        new AbortController();
+
+    deploymentControllers.set(
+        input.deploymentId,
+        controller,
+    );
+
     let workspacePath: string | null = null;
     let containerStarted = false;
 
@@ -350,9 +438,11 @@ async function executeDeployment(input: {
             `Deployment started for project "${input.projectName}".`,
         );
 
-        await updateDeploymentStatus(
+        await updateDeployment(
             input.deploymentId,
-            'CLONING',
+            {
+                status: 'CLONING',
+            },
         );
 
         await writeDeploymentLog(
@@ -371,6 +461,10 @@ async function executeDeployment(input: {
             });
 
         workspacePath = workspace.path;
+
+        throwIfDeploymentCancelled(
+            input.deploymentId,
+        );
 
         if (workspace.gitOutput.stdout.trim()) {
             await writeDeploymentLog(
@@ -391,6 +485,10 @@ async function executeDeployment(input: {
             `Repository cloned successfully. Commit: ${workspace.commitSha}.`,
         );
 
+        throwIfDeploymentCancelled(
+            input.deploymentId,
+        );
+
         await updateDeployment(
             input.deploymentId,
             {
@@ -408,7 +506,12 @@ async function executeDeployment(input: {
             await buildDeployment(
                 input.imageTag,
                 workspace.path,
+                controller.signal,
             );
+
+        throwIfDeploymentCancelled(
+            input.deploymentId,
+        );
 
         if (buildResult.stdout.trim()) {
             await writeDeploymentLog(
@@ -445,6 +548,10 @@ async function executeDeployment(input: {
             },
         );
 
+        throwIfDeploymentCancelled(
+            input.deploymentId,
+        );
+
         await writeDeploymentLog(
             input.deploymentId,
             `Starting container "${input.containerName}".`,
@@ -474,6 +581,27 @@ async function executeDeployment(input: {
 
         containerStarted = true;
 
+        /*
+         * The container has started, but the deployment may have
+         * been cancelled while Docker was starting it.
+         *
+         * If cancellation was requested, immediately remove the
+         * newly started runtime before doing anything else.
+         */
+        try {
+            throwIfDeploymentCancelled(
+                input.deploymentId,
+            );
+        } catch (error) {
+            await cleanupFailedRuntime(
+                input.containerName,
+            );
+
+            containerStarted = false;
+
+            throw error;
+        }
+
         await writeDeploymentLog(
             input.deploymentId,
             `Container "${input.containerName}" started successfully.`,
@@ -481,12 +609,20 @@ async function executeDeployment(input: {
 
         await writeDeploymentLog(
             input.deploymentId,
-            `Waiting for application health check on /health.`,
+            'Waiting for application health check on /health.',
         );
 
         await verifyDeployment(
             input.containerName,
             input.containerPort,
+        );
+
+        /*
+         * Do not allow a cancelled deployment to proceed to
+         * route activation.
+         */
+        throwIfDeploymentCancelled(
+            input.deploymentId,
         );
 
         await writeDeploymentLog(
@@ -495,10 +631,17 @@ async function executeDeployment(input: {
         );
 
         /*
-         * The new deployment is healthy.
+         * The deployment is healthy.
          *
-         * Update Nginx before stopping the previous deployment
-         * so the project URL immediately points to the new runtime.
+         * From this point onward we enter the finalization phase:
+         *
+         * 1. Activate the new Nginx route.
+         * 2. Stop the previous deployment.
+         * 3. Mark this deployment as RUNNING.
+         *
+         * Cancellation is no longer checked during this short
+         * finalization phase so that we do not leave Nginx pointing
+         * at a deployment that is later marked CANCELLED.
          */
         await writeDeploymentRoute({
             projectName: input.projectName,
@@ -531,6 +674,51 @@ async function executeDeployment(input: {
             'Deployment completed successfully.',
         );
     } catch (error) {
+        /*
+         * Cancellation is different from a deployment failure.
+         *
+         * A cancelled deployment should become CANCELLED,
+         * not FAILED.
+         */
+        if (
+            error instanceof DeploymentCancelledError ||
+            cancelledDeployments.has(
+                input.deploymentId,
+            )
+        ) {
+            await writeDeploymentLog(
+                input.deploymentId,
+                'Deployment cancellation acknowledged.',
+            );
+
+            if (containerStarted) {
+                await cleanupFailedRuntime(
+                    input.containerName,
+                );
+
+                await writeDeploymentLog(
+                    input.deploymentId,
+                    `Cleaned up cancelled container "${input.containerName}".`,
+                );
+            }
+
+            await updateDeployment(
+                input.deploymentId,
+                {
+                    status: 'CANCELLED',
+                    finished_at: database.fn.now(),
+                },
+            );
+
+            return;
+        }
+
+        /*
+         * Existing failure handling.
+         *
+         * Any error that is not a cancellation is a genuine
+         * deployment failure.
+         */
         console.error(
             `Deployment ${input.deploymentId} failed:`,
             error,
@@ -573,6 +761,9 @@ async function executeDeployment(input: {
             },
         );
     } finally {
+        /*
+         * Always clean up the temporary Git workspace.
+         */
         if (workspacePath) {
             await cleanupDeploymentWorkspace(
                 workspacePath,
@@ -584,21 +775,26 @@ async function executeDeployment(input: {
             );
         }
 
+        /*
+         * Cancellation is stored in memory only while the
+         * deployment is running. Once execution has finished,
+         * remove the entry so the Set does not grow forever.
+         */
+        cancelledDeployments.delete(
+            input.deploymentId,
+        );
+
+        deploymentControllers.delete(
+            input.deploymentId,
+        );
+
+        /*
+         * Allow another deployment for this project.
+         */
         activeDeploymentProjects.delete(
             input.projectId,
         );
     }
-}
-
-async function updateDeploymentStatus(
-    deploymentId: string,
-    status: DeploymentStatus,
-): Promise<void> {
-    await database('deployments')
-        .where('deployment_id', deploymentId)
-        .update({
-            status,
-        });
 }
 
 async function updateDeployment(

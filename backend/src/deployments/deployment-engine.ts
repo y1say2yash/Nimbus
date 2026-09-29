@@ -57,7 +57,7 @@ export async function prepareDeployment(
             input.branch,
             workspacePath,
         );
-        
+
         return {
             path: workspacePath,
             commitSha: gitResult.commitSha,
@@ -76,6 +76,7 @@ export async function prepareDeployment(
 export async function buildDeployment(
     imageTag: string,
     workspacePath: string,
+    signal?: AbortSignal,
 ): Promise<{
     stdout: string;
     stderr: string;
@@ -84,6 +85,7 @@ export async function buildDeployment(
         return await buildImage(
             imageTag,
             workspacePath,
+            signal,
         );
     } catch (error) {
         throw wrapDeploymentError(error);
