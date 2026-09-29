@@ -10,6 +10,7 @@ import {
     findAvailableHostPort,
 } from '../docker/docker-port.js';
 import {
+    cloneCommit,
     cloneRepository,
     GitError,
     type CloneRepositoryResult,
@@ -62,6 +63,50 @@ export async function prepareDeployment(
             path: workspacePath,
             commitSha: gitResult.commitSha,
             gitOutput: gitResult,
+        };
+    } catch (error) {
+        await fs.rm(workspacePath, {
+            recursive: true,
+            force: true,
+        });
+
+        throw wrapDeploymentError(error);
+    }
+}
+
+export async function prepareDeploymentAtCommit(
+    input: DeploymentInput & {
+        commitSha: string;
+    },
+): Promise<DeploymentWorkspace> {
+    const workspaceParent = await fs.mkdtemp(
+        path.join(
+            os.tmpdir(),
+            'nimbus-deployment-',
+        ),
+    );
+
+    const workspacePath = path.join(
+        workspaceParent,
+        'repo',
+    );
+
+    try {
+        await cloneCommit(
+            input.userId,
+            input.repositoryUrl,
+            input.commitSha,
+            workspacePath,
+        );
+
+        return {
+            path: workspacePath,
+            commitSha: input.commitSha,
+            gitOutput: {
+                commitSha: input.commitSha,
+                stdout: '',
+                stderr: '',
+            },
         };
     } catch (error) {
         await fs.rm(workspacePath, {

@@ -19,6 +19,7 @@ import {
     getDeployment,
     getDeploymentLogs,
     listDeployments,
+    redeployDeployment,
     stopDeployment,
 } from './deployment-service.js';
 
@@ -190,6 +191,29 @@ router.post(
                 );
 
             res.json({
+                data: deployment,
+            });
+        } catch (error) {
+            handleDeploymentError(
+                error,
+                res,
+            );
+        }
+    },
+);
+
+router.post(
+    '/projects/:projectId/deployments/:deploymentId/redeploy',
+    async (req, res) => {
+        try {
+            const deployment =
+                await redeployDeployment(
+                    getUserId(req),
+                    req.params.projectId,
+                    req.params.deploymentId,
+                );
+
+            res.status(202).json({
                 data: deployment,
             });
         } catch (error) {

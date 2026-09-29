@@ -20,6 +20,7 @@ import {
     cleanupDeploymentWorkspace,
     cleanupFailedRuntime,
     prepareDeployment,
+    prepareDeploymentAtCommit,
     startDeployment,
     verifyDeployment,
 } from './deployment-engine.js';
@@ -410,6 +411,112 @@ export async function createDeployment(
     return deployment;
 }
 
+export async function redeployDeployment(
+    userId: string,
+    projectId: string,
+    deploymentId: string,
+) {
+    if (activeDeploymentProjects.has(projectId)) {
+        throw new DeploymentConflictError();
+    }
+
+    const sourceDeployment =
+        await getDeployment(
+            userId,
+            projectId,
+            deploymentId,
+        );
+
+    if (!sourceDeployment.commit_sha) {
+        throw new DeploymentStateError(
+            'Deployment cannot be redeployed because it has no associated commit.',
+        );
+    }
+
+    const existingDeployment =
+        await database('deployments')
+            .select('deployment_id')
+            .where('project_id', projectId)
+            .whereIn('status', [
+                'PENDING',
+                'CLONING',
+                'BUILDING',
+                'STARTING',
+            ])
+            .first();
+
+    if (existingDeployment) {
+        throw new DeploymentConflictError();
+    }
+
+    const project =
+        await database('projects')
+            .select(
+                'project_id',
+                'project_name',
+                'repository_url',
+                'container_port',
+            )
+            .where('project_id', projectId)
+            .where('user_id', userId)
+            .where('is_active', true)
+            .first();
+
+    if (!project) {
+        throw new DeploymentProjectNotFoundError();
+    }
+
+    const timestamp = Date.now();
+
+    const imageTag =
+        `nimbus/${projectId}:deployment-${timestamp}`;
+
+    const containerName =
+        `nimbus-${projectId}-${timestamp}`;
+
+    const [deployment] =
+        await database('deployments')
+            .insert({
+                project_id: project.project_id,
+                repository_url:
+                    sourceDeployment.repository_url,
+                branch:
+                    sourceDeployment.branch,
+                commit_sha:
+                    sourceDeployment.commit_sha,
+                container_port:
+                    sourceDeployment.container_port,
+                image_tag: imageTag,
+                container_name: containerName,
+                status: 'PENDING',
+            })
+            .returning('*');
+
+    activeDeploymentProjects.add(
+        projectId,
+    );
+
+    void executeDeployment({
+        userId,
+        projectId,
+        projectName: project.project_name,
+        deploymentId:
+            deployment.deployment_id,
+        repositoryUrl:
+            sourceDeployment.repository_url,
+        branch:
+            sourceDeployment.branch,
+        containerPort:
+            sourceDeployment.container_port,
+        imageTag,
+        containerName,
+        commitSha:
+            sourceDeployment.commit_sha,
+    });
+
+    return deployment;
+}
+
 async function executeDeployment(input: {
     userId: string;
     projectId: string;
@@ -420,6 +527,7 @@ async function executeDeployment(input: {
     containerPort: number;
     imageTag: string;
     containerName: string;
+    commitSha?: string;
 }): Promise<void> {
     const controller =
         new AbortController();
@@ -445,13 +553,29 @@ async function executeDeployment(input: {
             },
         );
 
-        await writeDeploymentLog(
-            input.deploymentId,
-            `Cloning branch "${input.branch}" from ${input.repositoryUrl}.`,
-        );
+        if (input.commitSha) {
+            await writeDeploymentLog(
+                input.deploymentId,
+                `Redeploying exact commit ${input.commitSha} from ${input.repositoryUrl}.`,
+            );
+        } else {
+            await writeDeploymentLog(
+                input.deploymentId,
+                `Cloning branch "${input.branch}" from ${input.repositoryUrl}.`,
+            );
+        }
 
-        const workspace =
-            await prepareDeployment({
+        const workspace = input.commitSha
+            ? await prepareDeploymentAtCommit({
+                userId: input.userId,
+                repositoryUrl: input.repositoryUrl,
+                branch: input.branch,
+                containerPort: input.containerPort,
+                imageTag: input.imageTag,
+                containerName: input.containerName,
+                commitSha: input.commitSha,
+            })
+            : await prepareDeployment({
                 userId: input.userId,
                 repositoryUrl: input.repositoryUrl,
                 branch: input.branch,
