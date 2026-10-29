@@ -1,4 +1,7 @@
 import database from '../config/knex.js';
+import {
+    cleanupProjectDeployments,
+} from '../deployments/deployment-service.js';
 
 export interface CreateProjectInput {
     project_name: string;
@@ -258,11 +261,26 @@ export async function updateProject(
     }
 }
 
+
 export async function deleteProject(
     userId: string,
     projectId: string,
 ): Promise<void> {
-    const updatedRows = await database('projects')
+    const project = await database('projects')
+        .select('project_id')
+        .where('project_id', projectId)
+        .where('user_id', userId)
+        .where('is_active', true)
+        .first();
+
+    if (!project) {
+        throw new ProjectNotFoundError();
+    }
+
+    // Clean up deployment resources before soft-deleting the project.
+    await cleanupProjectDeployments(userId, projectId);
+
+    const updatedCount = await database('projects')
         .where('project_id', projectId)
         .where('user_id', userId)
         .where('is_active', true)
@@ -272,7 +290,7 @@ export async function deleteProject(
             updated_at: database.fn.now(),
         });
 
-    if (updatedRows === 0) {
+    if (updatedCount === 0) {
         throw new ProjectNotFoundError();
     }
 }

@@ -24,6 +24,16 @@ export class DockerError extends Error {
     }
 }
 
+function isContainerMissing(error: unknown): boolean {
+    if (!(error instanceof DockerError)) {
+        return false;
+    }
+
+    return /no such container/i.test(
+        `${error.message}\n${error.stderr}`,
+    );
+}
+
 async function runDocker(
     args: string[],
     options: {
@@ -126,19 +136,41 @@ export async function runContainer(options: {
 export async function stopContainer(
     containerName: string,
 ): Promise<DockerCommandResult> {
-    return runDocker([
-        'stop',
-        containerName,
-    ]);
+    try {
+        return await runDocker([
+            'stop',
+            containerName,
+        ]);
+    } catch (error) {
+        if (isContainerMissing(error)) {
+            return {
+                stdout: '',
+                stderr: `Container "${containerName}" was already absent.`,
+            };
+        }
+
+        throw error;
+    }
 }
 
 export async function removeContainer(
     containerName: string,
 ): Promise<DockerCommandResult> {
-    return runDocker([
-        'rm',
-        containerName,
-    ]);
+    try {
+        return await runDocker([
+            'rm',
+            containerName,
+        ]);
+    } catch (error) {
+        if (isContainerMissing(error)) {
+            return {
+                stdout: '',
+                stderr: `Container "${containerName}" was already absent.`,
+            };
+        }
+
+        throw error;
+    }
 }
 
 export async function removeImage(

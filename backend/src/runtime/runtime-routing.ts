@@ -89,15 +89,19 @@ export async function writeDeploymentRoute(
 
 export async function removeDeploymentRoute(
     projectName: string,
+    expectedContainerName: string,
 ): Promise<void> {
-    const existing =
-        await readRoutesFile();
+    const existing = await readRoutesFile();
 
-    const updated =
-        removeRoute(
-            existing,
-            projectName,
-        );
+    const updated = removeRoute(
+        existing,
+        projectName,
+        expectedContainerName,
+    );
+
+    if (updated === existing) {
+        return;
+    }
 
     await fs.writeFile(
         ROUTES_FILE,
@@ -164,6 +168,7 @@ function replaceRoute(
 function removeRoute(
     content: string,
     projectName: string,
+    expectedContainerName: string,
 ): string {
     const startMarker =
         `# NIMBUS_ROUTE:${projectName}`;
@@ -179,16 +184,30 @@ function removeRoute(
 
     if (
         startIndex === -1 ||
-        endIndex === -1
+        endIndex === -1 ||
+        endIndex <= startIndex
     ) {
+        return content;
+    }
+
+    const endIndexAfterMarker =
+        endIndex + endMarker.length;
+
+    const routeBlock = content.slice(
+        startIndex,
+        endIndexAfterMarker,
+    );
+
+    const expectedUpstream =
+        `proxy_pass http://${expectedContainerName}:`;
+
+    if (!routeBlock.includes(expectedUpstream)) {
         return content;
     }
 
     return (
         content.slice(0, startIndex) +
-        content.slice(
-            endIndex + endMarker.length,
-        )
+        content.slice(endIndexAfterMarker)
     );
 }
 

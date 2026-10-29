@@ -80,6 +80,8 @@ const activeDeploymentProjects = new Set<string>();
 const cancelledDeployments = new Set<string>();
 const deploymentControllers =
     new Map<string, AbortController>();
+const deploymentExecutionPromises =
+    new Map<string, Promise<void>>();
 
 function throwIfDeploymentCancelled(
     deploymentId: string,
@@ -210,52 +212,62 @@ export async function stopDeployment(
         'Stop requested by user.',
     );
 
-    try {
-        await writeDeploymentLog(
-            deploymentId,
-            `Stopping container "${deployment.container_name}".`,
-        );
+    let stopError: unknown;
 
-        await stopRuntime(
-            deployment.container_name,
-        );
+    try {
+        await stopRuntime(deployment.container_name);
 
         await writeDeploymentLog(
             deploymentId,
             `Container "${deployment.container_name}" stopped.`,
         );
+    } catch (error) {
+        stopError = error;
 
+        await writeDeploymentLog(
+            deploymentId,
+            `Warning: container stop failed: ${error instanceof Error
+                ? error.message
+                : 'Unknown error.'
+            }`,
+        );
+    }
+
+    try {
         await removeDeploymentRoute(
             project.project_name,
-        );
-
-        await writeDeploymentLog(
-            deploymentId,
-            `Application route /apps/${project.project_name}/ removed.`,
-        );
-
-        await updateDeployment(
-            deploymentId,
-            {
-                status: 'STOPPED',
-                finished_at: database.fn.now(),
-            },
-        );
-
-        await writeDeploymentLog(
-            deploymentId,
-            'Deployment stopped successfully.',
+            deployment.container_name,
         );
     } catch (error) {
         await writeDeploymentLog(
             deploymentId,
-            `Failed to stop deployment: ${error instanceof Error
+            `Failed to remove application route: ${error instanceof Error
                 ? error.message
                 : 'Unknown error.'
             }`,
         );
 
         throw error;
+    }
+
+    await updateDeployment(
+        deploymentId,
+        {
+            status: 'STOPPED',
+            finished_at: database.fn.now(),
+        },
+    );
+
+    await writeDeploymentLog(
+        deploymentId,
+        'Deployment stopped and its route removed.',
+    );
+
+    if (stopError) {
+        console.warn(
+            `Container stop failed for ${deployment.container_name}; route was removed and deployment marked STOPPED.`,
+            stopError,
+        );
     }
 
     return getDeployment(
@@ -396,7 +408,7 @@ export async function createDeployment(
 
     activeDeploymentProjects.add(projectId);
 
-    void executeDeployment({
+    const execution = executeDeployment({
         userId,
         projectId,
         projectName: project.project_name,
@@ -407,6 +419,25 @@ export async function createDeployment(
         imageTag,
         containerName,
     });
+
+    deploymentExecutionPromises.set(projectId, execution);
+
+    void execution.then(
+        () => {
+            if (
+                deploymentExecutionPromises.get(projectId) === execution
+            ) {
+                deploymentExecutionPromises.delete(projectId);
+            }
+        },
+        () => {
+            if (
+                deploymentExecutionPromises.get(projectId) === execution
+            ) {
+                deploymentExecutionPromises.delete(projectId);
+            }
+        },
+    );
 
     return deployment;
 }
@@ -492,29 +523,152 @@ export async function redeployDeployment(
             })
             .returning('*');
 
-    activeDeploymentProjects.add(
-        projectId,
-    );
+    activeDeploymentProjects.add(projectId);
 
-    void executeDeployment({
+    const execution = executeDeployment({
         userId,
         projectId,
         projectName: project.project_name,
-        deploymentId:
-            deployment.deployment_id,
-        repositoryUrl:
-            sourceDeployment.repository_url,
-        branch:
-            sourceDeployment.branch,
-        containerPort:
-            sourceDeployment.container_port,
+        deploymentId: deployment.deployment_id,
+        repositoryUrl: sourceDeployment.repository_url,
+        branch: sourceDeployment.branch,
+        containerPort: sourceDeployment.container_port,
         imageTag,
         containerName,
-        commitSha:
-            sourceDeployment.commit_sha,
+        commitSha: sourceDeployment.commit_sha,
     });
 
+    deploymentExecutionPromises.set(projectId, execution);
+
+    void execution.then(
+        () => {
+            if (
+                deploymentExecutionPromises.get(projectId) === execution
+            ) {
+                deploymentExecutionPromises.delete(projectId);
+            }
+        },
+        () => {
+            if (
+                deploymentExecutionPromises.get(projectId) === execution
+            ) {
+                deploymentExecutionPromises.delete(projectId);
+            }
+        },
+    );
+
     return deployment;
+}
+
+
+export async function cleanupProjectDeployments(
+    userId: string,
+    projectId: string,
+): Promise<void> {
+    const project = await database('projects')
+        .select('project_id', 'project_name')
+        .where('project_id', projectId)
+        .where('user_id', userId)
+        .where('is_active', true)
+        .first();
+
+    if (!project) {
+        throw new DeploymentProjectNotFoundError();
+    }
+
+    /*
+     * Cancel and wait for an active deployment before cleaning
+     * up its container and route.
+     */
+    const execution = deploymentExecutionPromises.get(projectId);
+
+    if (execution) {
+        const activeDeployment = await database('deployments')
+            .select('deployment_id')
+            .where('project_id', projectId)
+            .whereIn('status', [
+                'PENDING',
+                'CLONING',
+                'BUILDING',
+                'STARTING',
+            ])
+            .first();
+
+        if (activeDeployment) {
+            cancelledDeployments.add(
+                activeDeployment.deployment_id,
+            );
+
+            deploymentControllers
+                .get(activeDeployment.deployment_id)
+                ?.abort();
+        }
+
+        // Continue cleanup even if execution rejects unexpectedly.
+        await execution.catch((error: unknown) => {
+            console.error(
+                `Deployment execution cleanup failed for project ${projectId}:`,
+                error,
+            );
+        });
+    }
+
+    const deployments = await database('deployments')
+        .select(
+            'deployment_id',
+            'container_name',
+            'status',
+        )
+        .where('project_id', projectId);
+
+    /*
+     * Remove the matching Nginx route before removing containers.
+     * The route helper verifies the expected container name.
+     */
+    for (const deployment of deployments) {
+        await removeDeploymentRoute(
+            project.project_name,
+            deployment.container_name,
+        );
+    }
+
+    /*
+     * Stop and remove any remaining containers. Missing containers
+     * should not prevent cleanup of the other deployments.
+     */
+    for (const deployment of deployments) {
+        try {
+            await stopRuntime(deployment.container_name);
+        } catch (error) {
+            console.warn(
+                `Could not stop container ${deployment.container_name}:`,
+                error,
+            );
+        }
+
+        await cleanupFailedRuntime(deployment.container_name);
+    }
+
+    await database('deployments')
+        .where('project_id', projectId)
+        .where('status', 'RUNNING')
+        .update({
+            status: 'STOPPED',
+            finished_at: database.fn.now(),
+        });
+
+    await database('deployments')
+        .where('project_id', projectId)
+        .whereIn('status', [
+            'PENDING',
+            'CLONING',
+            'BUILDING',
+            'STARTING',
+        ])
+        .update({
+            status: 'CANCELLED',
+            finished_at: database.fn.now(),
+        });
 }
 
 async function executeDeployment(input: {
