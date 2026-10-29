@@ -13,6 +13,7 @@ import {
     readDeploymentLogs,
     writeDeploymentLog,
 } from '../logs/log-service.js';
+import { getDeploymentUrl } from '../runtime/runtime-url.js';
 
 import {
     allocateDeploymentPort,
@@ -93,38 +94,84 @@ function throwIfDeploymentCancelled(
 
 export async function listDeployments(
     userId: string,
-    projectId: string,
+    options: {
+        page: number;
+        pageSize: number;
+        statuses?: DeploymentStatus[];
+        projectId?: string;
+        includeProjectName?: boolean;
+    },
 ) {
-    const project = await database('projects')
-        .select('project_id')
-        .where('project_id', projectId)
-        .where('user_id', userId)
-        .where('is_active', true)
-        .first();
+    if (options.projectId) {
+        const project = await database('projects')
+            .select('project_id')
+            .where('project_id', options.projectId)
+            .where('user_id', userId)
+            .where('is_active', true)
+            .first();
 
-    if (!project) {
-        throw new DeploymentProjectNotFoundError();
+        if (!project) {
+            throw new DeploymentProjectNotFoundError();
+        }
     }
 
-    return database('deployments')
+    const filteredQuery = () => {
+        const query = database('deployments')
+            .join('projects', 'deployments.project_id', 'projects.project_id')
+            .where('projects.user_id', userId)
+            .where('projects.is_active', true);
+
+        if (options.projectId) {
+            query.where('deployments.project_id', options.projectId);
+        }
+        if (options.statuses?.length) {
+            query.whereIn('deployments.status', options.statuses);
+        }
+
+        return query;
+    };
+
+    const [{ count }] = await filteredQuery().count({ count: 'deployments.deployment_id' });
+    const total = Number(count);
+    const rows = await filteredQuery()
         .select(
-            'deployment_id',
-            'project_id',
-            'repository_url',
-            'branch',
-            'commit_sha',
-            'container_port',
-            'host_port',
-            'image_tag',
-            'container_name',
-            'status',
-            'error_message',
-            'created_at',
-            'started_at',
-            'finished_at',
+            'deployments.deployment_id',
+            'deployments.project_id',
+            'projects.project_name',
+            'deployments.repository_url',
+            'deployments.branch',
+            'deployments.commit_sha',
+            'deployments.container_port',
+            'deployments.host_port',
+            'deployments.image_tag',
+            'deployments.container_name',
+            'deployments.status',
+            'deployments.error_message',
+            'deployments.created_at',
+            'deployments.started_at',
+            'deployments.finished_at',
         )
-        .where('project_id', projectId)
-        .orderBy('created_at', 'desc');
+        .orderBy('deployments.created_at', 'desc')
+        .orderBy('deployments.deployment_id', 'desc')
+        .limit(options.pageSize)
+        .offset((options.page - 1) * options.pageSize);
+
+    return {
+        deployments: rows.map((deployment) => {
+            const { project_name, ...deploymentFields } = deployment;
+            return {
+                ...deploymentFields,
+                ...(options.includeProjectName ? { project_name } : {}),
+                application_url: deployment.status === 'RUNNING'
+                    ? getDeploymentUrl(project_name)
+                    : null,
+            };
+        }),
+        total,
+        page: options.page,
+        page_size: options.pageSize,
+        total_pages: Math.ceil(total / options.pageSize),
+    };
 }
 
 export async function getDeployment(

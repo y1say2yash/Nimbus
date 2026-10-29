@@ -1,5 +1,12 @@
 
+import { Link, NavLink, Outlet, Route, Routes, useLocation } from 'react-router-dom';
+
 import { useAuth } from './auth/use-auth.ts';
+import CreateProjectPage from './pages/CreateProjectPage';
+import DeploymentLogsPage from './pages/DeploymentLogsPage';
+import ProjectDetailsPage from './pages/ProjectDetailsPage';
+import { GlobalDeploymentsPage } from './pages/DeploymentsPage';
+import ProjectsPage from './pages/ProjectsPage';
 
 function LeafMark({ size = 34 }: { size?: number }) {
     return (
@@ -178,6 +185,8 @@ function DashboardScreen({
     };
     logout: () => Promise<void> | void;
 }) {
+    const location = useLocation();
+
     return (
         <main className="dashboard-page">
             <header className="app-topbar">
@@ -191,20 +200,28 @@ function DashboardScreen({
             <div className="dashboard-layout">
                 <aside className="sidebar">
                     <p className="sidebar-label">WORKSPACE</p>
-                    <div className="sidebar-item sidebar-item-active">
-                        <span className="sidebar-symbol">◈</span>
+                    <NavLink
+                        to="/"
+                        end
+                        className={({ isActive }) => `sidebar-item ${isActive ? 'sidebar-item-active' : 'sidebar-item-muted'}`}
+                    >
+                        <span className="sidebar-symbol" aria-hidden="true">◈</span>
                         Overview
-                    </div>
-                    <div className="sidebar-item sidebar-item-muted">
-                        <span className="sidebar-symbol">▤</span>
+                    </NavLink>
+                    <NavLink
+                        to="/projects"
+                        className={({ isActive }) => `sidebar-item ${isActive ? 'sidebar-item-active' : 'sidebar-item-muted'}`}
+                    >
+                        <span className="sidebar-symbol" aria-hidden="true">◈</span>
                         Projects
-                        <span className="sidebar-soon">NEXT</span>
-                    </div>
-                    <div className="sidebar-item sidebar-item-muted">
+                    </NavLink>
+                    <NavLink
+                        to="/deployments"
+                        className={({ isActive }) => `sidebar-item ${isActive ? 'sidebar-item-active' : 'sidebar-item-muted'}`}
+                    >
                         <span className="sidebar-symbol">⟳</span>
                         Deployments
-                        <span className="sidebar-soon">NEXT</span>
-                    </div>
+                    </NavLink>
                     <div className="sidebar-item sidebar-item-muted">
                         <span className="sidebar-symbol">⌁</span>
                         Build logs
@@ -249,130 +266,150 @@ function DashboardScreen({
                     </div>
                 </aside>
 
-                <section className="dashboard-main">
-                    <div className="breadcrumb">
-                        WORKSPACE <span>/</span> OVERVIEW
-                    </div>
-
-                    <div className="dashboard-heading">
-                        <div>
-                            <p className="eyebrow">YOUR WORKSPACE</p>
-                            <h1>
-                                Welcome back,{' '}
-                                <span className="gold-text">
-                                    {user.github_username}.
-                                </span>
-                            </h1>
-                            <p className="dashboard-subtitle">
-                                Your next deployment begins here.
-                            </p>
-                        </div>
-                        <div className="date-mark">
-                            <LeafMark size={28} />
-                        </div>
-                    </div>
-
-                    <div className="welcome-banner">
-                        <div className="banner-decoration">
-                            <LeafMark size={82} />
-                        </div>
-                        <div className="banner-content">
-                            <p className="panel-kicker">THE BEGINNING</p>
-                            <h2>Your workspace is ready.</h2>
-                            <p>
-                                Nimbus is connected to your GitHub identity.
-                                The next step is bringing your repositories
-                                into your workspace.
-                            </p>
-                        </div>
-                        <span className="banner-sparkle">✧</span>
-                    </div>
-
-                    <div className="section-heading">
-                        <div>
-                            <h2>At a glance</h2>
-                            <p>A quiet overview of your deployment workspace.</p>
-                        </div>
-                        <span className="section-caption">OVERVIEW</span>
-                    </div>
-
-                    <div className="overview-grid">
-                        <article className="overview-card">
-                            <div className="overview-card-top">
-                                <span className="overview-icon">▤</span>
-                                <span className="card-index">01</span>
+                <main className="dashboard-main">
+                    {location.pathname === '/' ? (
+                        <>
+                            <div className="breadcrumb">
+                                WORKSPACE <span>/</span> OVERVIEW
                             </div>
-                            <p className="overview-label">PROJECTS</p>
-                            <h3>—</h3>
-                            <p className="overview-note">Repository workspaces</p>
-                        </article>
 
-                        <article className="overview-card">
-                            <div className="overview-card-top">
-                                <span className="overview-icon">⟳</span>
-                                <span className="card-index">02</span>
+                            <div className="dashboard-heading">
+                                <div>
+                                    <p className="eyebrow">YOUR WORKSPACE</p>
+                                    <h1>
+                                        Welcome back,{' '}
+                                        <span className="gold-text">
+                                            {user.github_username}.
+                                        </span>
+                                    </h1>
+                                    <p className="dashboard-subtitle">
+                                        Your next deployment begins here.
+                                    </p>
+                                </div>
+                                <div className="date-mark">
+                                    <LeafMark size={28} />
+                                </div>
                             </div>
-                            <p className="overview-label">DEPLOYMENTS</p>
-                            <h3>—</h3>
-                            <p className="overview-note">Deployment history</p>
-                        </article>
 
-                        <article className="overview-card">
-                            <div className="overview-card-top">
-                                <span className="overview-icon">⌁</span>
-                                <span className="card-index">03</span>
+                            <div className="welcome-banner">
+                                <div className="banner-decoration">
+                                    <LeafMark size={82} />
+                                </div>
+                                <div className="banner-content">
+                                    <p className="panel-kicker">THE BEGINNING</p>
+                                    <h2>Your workspace is ready.</h2>
+                                    <p>
+                                        Nimbus is connected to your GitHub identity.
+                                        The next step is bringing your repositories
+                                        into your workspace.
+                                    </p>
+                                </div>
+                                <span className="banner-sparkle">✧</span>
                             </div>
-                            <p className="overview-label">ENVIRONMENT</p>
-                            <h3 className="environment-value">Self-hosted</h3>
-                            <p className="overview-note">Docker-based platform</p>
-                        </article>
-                    </div>
 
-                    <section className="account-card">
-                        <div className="account-heading">
-                            <div>
-                                <p className="panel-kicker">CONNECTED IDENTITY</p>
-                                <h2>Your GitHub account</h2>
+                            <div className="section-heading">
+                                <div>
+                                    <h2>At a glance</h2>
+                                    <p>A quiet overview of your deployment workspace.</p>
+                                </div>
+                                <span className="section-caption">OVERVIEW</span>
                             </div>
-                            <span className="connected-badge">
-                                <span className="status-dot" />
-                                CONNECTED
-                            </span>
-                        </div>
 
-                        <div className="account-details">
-                            {user.avatar_url ? (
-                                <img
-                                    className="account-avatar"
-                                    src={user.avatar_url}
-                                    alt=""
-                                />
-                            ) : (
-                                <span className="account-avatar avatar-fallback">
-                                    {user.github_username.slice(0, 1).toUpperCase()}
-                                </span>
-                            )}
-                            <div className="account-identity">
-                                <strong>{user.github_username}</strong>
-                                <span>{user.email || 'No email provided by GitHub'}</span>
+                            <div className="overview-grid">
+                                <article className="overview-card">
+                                    <div className="overview-card-top">
+                                        <span className="overview-icon">▤</span>
+                                        <span className="card-index">01</span>
+                                    </div>
+                                    <p className="overview-label">PROJECTS</p>
+                                    <h3>—</h3>
+                                    <p className="overview-note">Repository workspaces</p>
+                                </article>
+
+                                <article className="overview-card">
+                                    <div className="overview-card-top">
+                                        <span className="overview-icon">⟳</span>
+                                        <span className="card-index">02</span>
+                                    </div>
+                                    <p className="overview-label">DEPLOYMENTS</p>
+                                    <h3>—</h3>
+                                    <p className="overview-note">Deployment history</p>
+                                </article>
+
+                                <article className="overview-card">
+                                    <div className="overview-card-top">
+                                        <span className="overview-icon">⌁</span>
+                                        <span className="card-index">03</span>
+                                    </div>
+                                    <p className="overview-label">ENVIRONMENT</p>
+                                    <h3 className="environment-value">Self-hosted</h3>
+                                    <p className="overview-note">Docker-based platform</p>
+                                </article>
                             </div>
-                            <button
-                                className="button button-secondary"
-                                type="button"
-                                onClick={() => void logout()}
-                            >
-                                Sign out
-                            </button>
-                        </div>
-                    </section>
 
-                    <footer className="dashboard-footer">
-                        <span><LeafMark size={14} /> NIMBUS WORKSPACE</span>
-                        <span>MADE TO SHIP, MADE TO LAST</span>
-                    </footer>
-                </section>
+                            <section className="account-card">
+                                <div className="account-heading">
+                                    <div>
+                                        <p className="panel-kicker">CONNECTED IDENTITY</p>
+                                        <h2>Your GitHub account</h2>
+                                    </div>
+                                    <span className="connected-badge">
+                                        <span className="status-dot" />
+                                        CONNECTED
+                                    </span>
+                                </div>
+
+                                <div className="account-details">
+                                    {user.avatar_url ? (
+                                        <img
+                                            className="account-avatar"
+                                            src={user.avatar_url}
+                                            alt=""
+                                        />
+                                    ) : (
+                                        <span className="account-avatar avatar-fallback">
+                                            {user.github_username.slice(0, 1).toUpperCase()}
+                                        </span>
+                                    )}
+                                    <div className="account-identity">
+                                        <strong>{user.github_username}</strong>
+                                        <span>{user.email || 'No email provided by GitHub'}</span>
+                                    </div>
+                                    <button
+                                        className="button button-secondary"
+                                        type="button"
+                                        onClick={() => void logout()}
+                                    >
+                                        Sign out
+                                    </button>
+                                </div>
+                            </section>
+
+                            <footer className="dashboard-footer">
+                                <span><LeafMark size={14} /> NIMBUS WORKSPACE</span>
+                                <span>MADE TO SHIP, MADE TO LAST</span>
+                            </footer>
+                        </>
+                    ) : (
+                        <Outlet />
+                    )}
+                </main>
             </div>
         </main>
+    );
+}
+
+function NotFoundPage() {
+    return (
+        <section className="workflow-page">
+            <div className="breadcrumb">WORKSPACE <span>/</span> NOT FOUND</div>
+            <div className="projects-state">
+                <span className="state-symbol" aria-hidden="true">?</span>
+                <h2>This page is not part of the workspace</h2>
+                <p>The address may be outdated, or the page may not exist.</p>
+                <Link className="button button-primary" to="/">Return to overview</Link>
+            </div>
+        </section>
     );
 }
 
@@ -387,7 +424,22 @@ function App() {
         return <LoginScreen />;
     }
 
-    return <DashboardScreen user={user} logout={logout} />;
+    return (
+        <Routes>
+            <Route element={<DashboardScreen user={user} logout={logout} />}>
+                <Route index element={null} />
+                <Route path="projects" element={<ProjectsPage />} />
+                <Route path="projects/new" element={<CreateProjectPage />} />
+                <Route path="deployments" element={<GlobalDeploymentsPage />} />
+                <Route path="projects/:projectId" element={<ProjectDetailsPage />} />
+                <Route
+                    path="projects/:projectId/deployments/:deploymentId/logs"
+                    element={<DeploymentLogsPage />}
+                />
+                <Route path="*" element={<NotFoundPage />} />
+            </Route>
+        </Routes>
+    );
 }
 
 export default App;
