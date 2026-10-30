@@ -2,6 +2,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getProjects } from '../api/projects';
+import { useAnalytics } from '../analytics/use-analytics';
+import { ActivityChart, ChartCard, MetricCard, ProjectDeploymentChart } from '../components/analytics/AnalyticsComponents';
 import type { Project } from '../types/project';
 
 function getRepositoryName(url: string): string {
@@ -12,6 +14,7 @@ function ProjectsPage() {
     const [projects, setProjects] = useState<Project[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const analytics = useAnalytics();
 
     const loadProjects = useCallback(async () => {
         setLoading(true);
@@ -59,6 +62,46 @@ function ProjectsPage() {
                 </div>
 
             </header>
+
+            {analytics.summaryError && (
+                <div className="inline-error" role="alert">
+                    <span>Project summary unavailable: {analytics.summaryError}</span>
+                    <button className="button button-secondary" type="button" onClick={() => void analytics.refresh()}>Retry summary</button>
+                </div>
+            )}
+            {analytics.chartsError && (
+                <div className="inline-error" role="alert">
+                    <span>Project charts unavailable: {analytics.chartsError}</span>
+                    <button className="button button-secondary" type="button" onClick={() => void analytics.refresh()}>Retry charts</button>
+                </div>
+            )}
+
+            {analytics.summary && (
+                <>
+                    <div className="metrics-grid metrics-grid-four project-metrics">
+                        <MetricCard label="TOTAL PROJECTS" value={analytics.summary.summary.total_projects} note="In this workspace" />
+                        <MetricCard label="ACTIVE PROJECTS" value={analytics.summary.summary.active_projects} note="Available for deployment" />
+                        <MetricCard label="WITH RUNNING DEPLOYMENTS" value={analytics.summary.summary.projects_with_running_deployments} note="Currently serving traffic" tone="success" />
+                        <MetricCard label="WITHOUT RUNNING DEPLOYMENT" value={analytics.summary.summary.projects_without_running_deployments} note="No deployment currently running" tone="muted" />
+                    </div>
+                </>
+            )}
+            {analytics.charts && (
+                <div className="analytics-grid project-analytics-grid">
+                    <ChartCard title="Project creation" subtitle="New non-deleted projects by day.">
+                        <ActivityChart points={analytics.charts.project_activity.map((point) => ({
+                                date: point.date,
+                                successful: point.projects,
+                                failed: 0,
+                                other: 0,
+                        }))} singleSeriesLabel="Projects created" />
+                    </ChartCard>
+                    <ChartCard title="Deployments by project" subtitle="Most active projects, all-time deployment count." periodLabel="ALL TIME">
+                        <ProjectDeploymentChart projects={analytics.charts.project_deployment_activity} />
+                    </ChartCard>
+                </div>
+            )}
+            {(analytics.summaryLoading && !analytics.summary) || (analytics.chartsLoading && !analytics.charts) ? <div className="analytics-inline-loading" role="status"><span className="loading-indicator" /> Loading project analytics…</div> : null}
 
             <div className="projects-toolbar">
                 <div>
@@ -127,7 +170,9 @@ function ProjectsPage() {
 
             {!loading && !error && projects.length > 0 && (
                 <div className="projects-grid">
-                    {projects.map((project) => (
+                    {projects.map((project) => {
+                        const analyticsProject = analytics.summary?.projects.find((item) => item.project_id === project.project_id);
+                        return (
                         <article
                             className="project-card"
                             key={project.project_id}
@@ -164,7 +209,31 @@ function ProjectsPage() {
                                     <span>CONTAINER PORT</span>
                                     <strong>{project.container_port}</strong>
                                 </div>
+                                {analyticsProject?.latest_deployment_status && (
+                                    <div>
+                                        <span>LAST DEPLOYMENT</span>
+                                        <strong>
+                                            <span className={`deployment-status status-${analyticsProject.latest_deployment_status.toLowerCase()}`}>
+                                                {analyticsProject.latest_deployment_status}
+                                            </span>
+                                        </strong>
+                                    </div>
+                                )}
+                                {analyticsProject?.latest_deployment_created_at && (
+                                    <div>
+                                        <span>LAST DEPLOYED</span>
+                                        <strong>{new Date(analyticsProject.latest_deployment_created_at).toLocaleDateString()}</strong>
+                                    </div>
+                                )}
                             </div>
+                            {analyticsProject?.latest_deployment_branch && (
+                                <p className="project-last-deployment-meta">
+                                    Last run: {analyticsProject.latest_deployment_branch}
+                                    {analyticsProject.latest_deployment_commit_sha
+                                        ? ` · ${analyticsProject.latest_deployment_commit_sha.slice(0, 8)}`
+                                        : ''}
+                                </p>
+                            )}
 
                             <Link
                                 className="project-card-link"
@@ -174,7 +243,8 @@ function ProjectsPage() {
                                 <span aria-hidden="true">↗</span>
                             </Link>
                         </article>
-                    ))}
+                    );
+                    })}
                 </div>
             )}
         </section>

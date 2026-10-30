@@ -7,6 +7,7 @@ import authRoutes from './auth/auth-routes.js';
 import userRoutes from './users/user-routes.js';
 import projectRoutes from './projects/project-routes.js';
 import deploymentRoutes from './deployments/deployment-routes.js';
+import dashboardRoutes from './dashboard/dashboard-routes.js';
 
 const app = express();
 
@@ -17,6 +18,7 @@ app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/projects', projectRoutes);
 app.use('/api/v1', deploymentRoutes);
+app.use('/api/v1/dashboard', dashboardRoutes);
 
 app.get('/api/v1/health', async (_req, res) => {
     try {

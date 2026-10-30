@@ -12,6 +12,7 @@ import {
 import { ApiRequestError } from '../api/client';
 import { getProject, getProjects } from '../api/projects';
 import type { Project } from '../types/project';
+import { DeploymentOverview } from './DeploymentOverview';
 
 const PAGE_SIZE = 10;
 const deploymentStatuses = [
@@ -189,6 +190,7 @@ function ProjectDeploymentsContent({
     function applyFilters(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
         const nextParams = new URLSearchParams();
+        nextParams.set('tab', 'history');
         if (draftProjectId) nextParams.set('project_id', draftProjectId);
         if (draftStatus) nextParams.set('status', draftStatus);
         setSearchParams(nextParams);
@@ -198,7 +200,7 @@ function ProjectDeploymentsContent({
     function clearFilters() {
         setDraftProjectId('');
         setDraftStatus('');
-        setSearchParams(new URLSearchParams());
+        setSearchParams(new URLSearchParams({ tab: 'history' }));
         setPage(1);
     }
 
@@ -231,6 +233,41 @@ function ProjectDeploymentsContent({
                 </div>
             </header>
 
+            <nav className="deployment-tabs" aria-label="Deployment views">
+                <button
+                    className="deployment-tab"
+                    type="button"
+                    onClick={() => setSearchParams((current) => {
+                        const next = new URLSearchParams(current);
+                        next.set('tab', 'overview');
+                        return next;
+                    })}
+                >
+                    Deployment Overview
+                </button>
+                <button
+                    className="deployment-tab deployment-tab-active"
+                    type="button"
+                    onClick={() => setSearchParams((current) => {
+                        const next = new URLSearchParams(current);
+                        next.set('tab', 'history');
+                        return next;
+                    })}
+                    aria-current="page"
+                >
+                    Deployment History
+                </button>
+            </nav>
+
+            <section className="deployment-history">
+                <div className="section-heading">
+                    <div>
+                        <h2>Deployment history</h2>
+                        <p>{total} {total === 1 ? 'deployment' : 'deployments'} · newest first</p>
+                    </div>
+                    <span className="section-caption">{total ? `PAGE ${page} OF ${totalPages}` : 'NO DEPLOYMENTS'}</span>
+                </div>
+
             <form className="deployment-filter-panel" onSubmit={applyFilters}>
                 <label className="form-field">
                     <span>PROJECT</span>
@@ -254,15 +291,6 @@ function ProjectDeploymentsContent({
                 </div>
                 {projectsError && <p className="workflow-error" role="alert">{projectsError}</p>}
             </form>
-
-            <section className="deployment-history">
-                <div className="section-heading">
-                    <div>
-                        <h2>Deployment history</h2>
-                        <p>{total} {total === 1 ? 'deployment' : 'deployments'} · newest first</p>
-                    </div>
-                    <span className="section-caption">{total ? `PAGE ${page} OF ${totalPages}` : 'NO DEPLOYMENTS'}</span>
-                </div>
 
                 {error && <div className="inline-error" role="alert"><span>{error}</span><button className="button button-secondary" type="button" onClick={() => void loadPage(page)}>Try again</button></div>}
                 {operationError && <p className="workflow-error" role="alert">{operationError}</p>}
@@ -359,6 +387,23 @@ export function GlobalDeploymentsPage() {
     const status = deploymentStatuses.includes(requestedStatus as (typeof deploymentStatuses)[number])
         ? requestedStatus
         : undefined;
+    const [, setSearchParams] = useSearchParams();
+    if (searchParams.get('tab') !== 'history') {
+        return (
+            <DeploymentOverview
+                openHistory={() => setSearchParams((current) => {
+                    const next = new URLSearchParams(current);
+                    next.set('tab', 'history');
+                    return next;
+                })}
+                openOverview={() => setSearchParams((current) => {
+                    const next = new URLSearchParams(current);
+                    next.set('tab', 'overview');
+                    return next;
+                })}
+            />
+        );
+    }
     return (
         <ProjectDeploymentsContent
             key={`${projectId ?? 'all'}:${status ?? 'all'}`}

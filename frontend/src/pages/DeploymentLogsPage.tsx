@@ -46,7 +46,7 @@ function DeploymentLogsPage() {
     return (
         <section className="workflow-page">
             <div className="breadcrumb">
-                WORKSPACE <span>/</span> <Link to={`/deployments?project_id=${encodeURIComponent(projectId)}`}>DEPLOYMENTS</Link>
+                WORKSPACE <span>/</span> <Link to={`/deployments?tab=history&project_id=${encodeURIComponent(projectId)}`}>DEPLOYMENTS</Link>
                 <span>/</span> LOGS
             </div>
             <header className="workflow-heading">
@@ -56,7 +56,7 @@ function DeploymentLogsPage() {
                     <p className="dashboard-subtitle">Deployment {deploymentId}</p>
                 </div>
                 <div className="workflow-actions">
-                    <Link className="button button-secondary" to={`/deployments?project_id=${encodeURIComponent(projectId)}`}>Back to deployments</Link>
+                    <Link className="button button-secondary" to={`/deployments?tab=history&project_id=${encodeURIComponent(projectId)}`}>Back to deployments</Link>
                     <button className="button button-primary" type="button" onClick={() => { setLoading(true); setError(''); void loadLogs(); }} disabled={loading}>
                         {loading ? 'Refreshing…' : 'Refresh logs'}
                     </button>

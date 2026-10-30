@@ -310,7 +310,7 @@ function ProjectDetailsPage() {
                     {branchesError && <p className="workflow-note" role="status">{branchesError} Deploying the configured default branch remains available.</p>}
                     {operationError?.projectId === projectId && <p className="workflow-error" role="alert">{operationError.message}</p>}
                     {feedback?.projectId === projectId && <p className="workflow-success" role="status">{feedback.message}</p>}
-                    <Link className="deployment-history-link" to={`/deployments?project_id=${encodeURIComponent(project.project_id)}`}>
+                    <Link className="deployment-history-link" to={`/deployments?tab=history&project_id=${encodeURIComponent(project.project_id)}`}>
                         View deployment history <span aria-hidden="true">→</span>
                     </Link>
                 </section>

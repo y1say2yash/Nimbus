@@ -879,6 +879,32 @@ The generated URL represents the deployed application endpoint exposed through N
 
 ---
 
+## 11.7 Dashboard Analytics
+
+### Get Dashboard Analytics
+
+```
+GET /api/v1/dashboard/summary
+GET /api/v1/dashboard/charts
+GET /api/v1/dashboard/analytics
+```
+
+Authentication is required. These authenticated endpoints return aggregate statistics and compact chart datasets for the authenticated user's active projects only. The frontend loads summary and chart data independently so a chart query failure does not hide otherwise available summary data. The combined `/analytics` endpoint is available when a single response is useful. Deployment counts, recent activity, project activity, and deployment status are scoped through project ownership in PostgreSQL.
+
+The response includes:
+
+- Project and deployment summary counts
+- Deployment status distribution and daily deployment activity
+- Daily project creation and deployment counts grouped by project
+- Recent deployment records, including the backend-provided application URL for running deployments
+- Build activity derived from deployment records; no separate build entity is created
+
+The total project count includes non-deleted projects; active-project and deployment statistics only include projects currently marked active. Daily activity covers the current UTC day and the preceding 29 days. The success rate is the number of currently `RUNNING` deployments divided by currently `RUNNING` plus `FAILED` deployments. It is `null` when neither outcome exists. `STOPPED` and `CANCELLED` deployments are not counted as successful deployments.
+
+Build outcomes are an approximation of the current deployment lifecycle state: `RUNNING` and `STOPPED` count as successful builds, `FAILED` as failed, and `PENDING`, `CLONING`, `BUILDING`, and `STARTING` as in progress. Because deployment status is stored as the current state rather than a transition history, historical activity uses each record's current state.
+
+---
+
 ## 12. Administrative Endpoints
 
 No administrative API endpoints are implemented in Semester 1.
